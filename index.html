@@ -79,7 +79,7 @@
             opacity: 1;
         }
         .json-item {
-            display: block;  /* 改成块级布局 */
+            display: block;
             margin-bottom: 5px;
             padding: 2px 5px;
             border-bottom: 1px solid #eee;
@@ -233,20 +233,20 @@
 
     <script>
         let baseUrl = document.getElementById('baseUrlSelect').value;
-        let currentApi = null; // 存储当前选中的API信息
-        let lastResponses = {}; // 存储各API的最后响应结果
+        let currentApi = null;
+        let lastResponses = {};
+        let accordionInstances = {}; // 存储Bootstrap手风琴实例
 
         // 域名切换事件
         document.getElementById('baseUrlSelect').addEventListener('change', function() {
             baseUrl = this.value;
             console.log('API 域名切换到:', baseUrl);
-            // 重新加载当前选中的 API
             if (currentApi) {
                 loadApiContent(currentApi, true);
             }
         });
 
-        // API 数据（基于提供的 Markdown 内容）
+        // API 数据
         const apiData = [
             {
                 name: '日更资讯',
@@ -387,6 +387,7 @@
         function buildNavigation(data) {
             const navContainer = document.getElementById('api-navigation');
             navContainer.innerHTML = '';
+            
             data.forEach((category, catIndex) => {
                 const accordionItem = document.createElement('div');
                 accordionItem.className = 'accordion-item';
@@ -396,7 +397,7 @@
                             ${category.name}
                         </button>
                     </h2>
-                    <div id="collapse${catIndex}" class="accordion-collapse collapse ${catIndex === 0 ? 'show' : ''}">
+                    <div id="collapse${catIndex}" class="accordion-collapse collapse ${catIndex === 0 ? 'show' : ''}" data-bs-parent="#api-navigation">
                         <div class="accordion-body p-0">
                             <ul class="list-group list-group-flush">
                                 ${category.apis.map((api, apiIndex) => `
@@ -409,6 +410,12 @@
                     </div>
                 `;
                 navContainer.appendChild(accordionItem);
+                
+                // 初始化Bootstrap折叠组件
+                const collapseElement = document.getElementById(`collapse${catIndex}`);
+                accordionInstances[`collapse${catIndex}`] = new bootstrap.Collapse(collapseElement, {
+                    toggle: false
+                });
             });
 
             // 添加点击事件
@@ -430,29 +437,56 @@
             // 检查URL hash并选择对应的API
             const hash = window.location.hash.substring(1);
             if (hash) {
-                const targetItem = document.querySelector(`[data-api-id="${hash}"]`);
-                if (targetItem) {
-                    console.log('从URL hash加载API:', targetItem.textContent);
-                    targetItem.click();
+                // 查找对应的API项
+                let targetApi = null;
+                let targetCategoryIndex = -1;
+                let targetApiIndex = -1;
+                
+                data.forEach((category, catIndex) => {
+                    category.apis.forEach((api, apiIndex) => {
+                        if (getApiId(api) === hash) {
+                            targetApi = api;
+                            targetCategoryIndex = catIndex;
+                            targetApiIndex = apiIndex;
+                        }
+                    });
+                });
+                
+                if (targetApi) {
+                    console.log('从URL hash加载API:', targetApi.title);
+                    
+                    // 展开对应的分类
+                    Object.keys(accordionInstances).forEach(key => {
+                        if (key === `collapse${targetCategoryIndex}`) {
+                            accordionInstances[key].show();
+                        } else {
+                            accordionInstances[key].hide();
+                        }
+                    });
+                    
+                    // 选中对应的API项
+                    const targetItem = document.querySelector(`[data-api-id="${hash}"]`);
+                    if (targetItem) {
+                        targetItem.click();
+                    }
                 } else {
                     // 默认选中第一个 API
-                    const firstItem = document.querySelector('.list-group-item-action');
-                    if (firstItem) {
-                        console.log('默认选中第一个 API:', firstItem.textContent);
-                        firstItem.click();
-                    } else {
-                        console.error('未找到任何 API 导航项');
-                    }
+                    selectFirstApi(data);
                 }
             } else {
                 // 默认选中第一个 API
-                const firstItem = document.querySelector('.list-group-item-action');
-                if (firstItem) {
-                    console.log('默认选中第一个 API:', firstItem.textContent);
-                    firstItem.click();
-                } else {
-                    console.error('未找到任何 API 导航项');
-                }
+                selectFirstApi(data);
+            }
+        }
+
+        // 选择第一个API
+        function selectFirstApi(data) {
+            const firstItem = document.querySelector('.list-group-item-action');
+            if (firstItem) {
+                console.log('默认选中第一个 API:', firstItem.textContent);
+                firstItem.click();
+            } else {
+                console.error('未找到任何 API 导航项');
             }
         }
 
@@ -505,7 +539,7 @@
             
             jsonContainer.classList.remove('loaded');
             jsonContainer.classList.add('loading');
-            fetchBtn.disabled = true; // 禁用按钮
+            fetchBtn.disabled = true;
             
             let url = `${baseUrl}${api.endpoint}`;
             const params = [];
@@ -544,7 +578,7 @@
             } finally {
                 jsonContainer.classList.remove('loading');
                 jsonContainer.classList.add('loaded');
-                fetchBtn.disabled = false; // 恢复按钮
+                fetchBtn.disabled = false;
             }
         }
 
