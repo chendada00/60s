@@ -1,0 +1,482 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>60s API Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <style>
+        :root {
+            --primary-color: #6366f1;
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-color: #1f2937;
+            --pre-bg: #f9fafb;
+            --key-color: #1d4ed8;
+            --string-color: #10b981;
+            --number-color: #f59e0b;
+            --boolean-color: #6b7280;
+            --border-radius: 8px;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding-top: 20px;
+        }
+        .container-fluid {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .sidebar {
+            min-height: calc(100vh - 100px);
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+            position: sticky;
+            top: 20px;
+            background-color: var(--card-bg);
+            border-right: 1px solid #dee2e6;
+            padding: 20px;
+        }
+        .content-area {
+            min-height: calc(100vh - 100px);
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .card {
+            background-color: var(--card-bg);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            border-radius: var(--border-radius);
+            margin-bottom: 20px;
+        }
+        #json-container {
+            background: var(--pre-bg);
+            padding: 15px;
+            border-radius: var(--border-radius);
+            height: auto;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            transition: opacity 0.3s ease;
+            opacity: 0;
+        }
+        #json-container.loaded {
+            opacity: 1;
+        }
+        .json-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 10px;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .json-key {
+            color: var(--key-color);
+            font-weight: bold;
+            min-width: 120px;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        .json-value {
+            flex-grow: 1;
+            word-break: break-word;
+        }
+        .json-string { color: var(--string-color); }
+        .json-number { color: var(--number-color); }
+        .json-boolean, .json-null { color: var(--boolean-color); }
+        .json-link a {
+            color: var(--key-color);
+            text-decoration: underline;
+        }
+        .json-link a:hover {
+            color: #1e40af;
+        }
+        .json-collapsible {
+            cursor: pointer;
+            user-select: none;
+            display: inline;
+        }
+        .json-collapsible::before {
+            content: '▼';
+            margin-right: 5px;
+        }
+        .json-collapsible.collapsed::before {
+            content: '▶';
+        }
+        .json-collapsible-content {
+            display: block;
+        }
+        .json-collapsible-content.collapsed {
+            display: none;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            border-radius: 6px;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+        .btn-primary:hover {
+            background-color: #4f46e5;
+            transform: scale(1.05);
+        }
+        .accordion-button {
+            font-weight: bold;
+            color: var(--text-color);
+        }
+        .accordion-button:not(.collapsed) {
+            color: var(--primary-color);
+            background-color: #e0e7ff;
+        }
+        .list-group-item-action {
+            cursor: pointer;
+        }
+        .list-group-item-action:hover {
+            background-color: #e0e7ff;
+        }
+        .list-group-item-action.active {
+            background-color: #e0e7ff;
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+        .form-control {
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            transition: border-color 0.3s ease;
+        }
+        .form-control:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+        .domain-select {
+            max-width: 400px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                max-height: none;
+                position: relative;
+                top: 0;
+            }
+            .content-area {
+                padding: 15px;
+            }
+            .json-key {
+                min-width: 80px;
+            }
+            .json-collapsible-content {
+                margin-left: 0;
+            }
+            #json-container {
+                font-size: 0.85rem;
+            }
+            .domain-select {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- 左侧导航 -->
+            <div class="col-md-3 sidebar">
+                <h5 class="mb-3">API 导航</h5>
+                <div class="mb-3">
+                    <label for="baseUrlSelect" class="form-label">选择 API 域名：</label>
+                    <select id="baseUrlSelect" class="form-select domain-select">
+                        <option value="https://60s.viki.moe/v2" selected>主域名: https://60s.viki.moe</option>
+                        <option value="https://60s.b23.run/v2">备用1: https://60s.b23.run</option>
+                        <option value="https://60s-cf.viki.moe/v2">备用2: https://60s-cf.viki.moe</option>
+                        <option value="https://60s.114128.xyz/v2">备用3: https://60s.114128.xyz</option>
+                        <option value="https://60s-cf.114128.xyz/v2">备用4: https://60s-cf.114128.xyz</option>
+                    </select>
+                </div>
+                <div id="api-navigation" class="accordion"></div>
+            </div>
+            <!-- 右侧内容区 -->
+            <div class="col-md-9 content-area">
+                <h2 class="mb-4">API 响应数据</h2>
+                <div id="api-content" class="card p-3">
+                    <h5 id="api-title" class="mb-3">请选择一个API</h5>
+                    <div id="api-params" class="mb-3"></div>
+                    <button id="fetch-btn" class="btn btn-primary mb-3" style="display: none;">获取数据</button>
+                    <div id="json-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let baseUrl = document.getElementById('baseUrlSelect').value;
+
+        // 域名切换事件
+        document.getElementById('baseUrlSelect').addEventListener('change', function() {
+            baseUrl = this.value;
+            console.log('API 域名切换到:', baseUrl);
+            // 重新加载当前选中的 API
+            const activeItem = document.querySelector('.list-group-item-action.active');
+            if (activeItem) {
+                activeItem.click();
+            }
+        });
+
+        // API 数据（基于提供的 Markdown 内容）
+        const apiData = [
+            {
+                name: '日更资讯',
+                apis: [
+                    { title: '每天 60 秒读懂世界', endpoint: '/60s?encoding=json', params: [] },
+                    { title: '必应每日壁纸', endpoint: '/bing', params: [] },
+                    { title: '当日货币汇率', endpoint: '/exchange_rate', params: [] },
+                    { title: '历史上的今天', endpoint: '/today_in_history', params: [] }
+                ]
+            },
+            {
+                name: '热门榜单',
+                apis: [
+                    { title: '抖音热搜', endpoint: '/douyin', params: [] },
+                    { title: '小红书热点', endpoint: '/rednote', params: [] },
+                    { title: '哔哩哔哩热搜', endpoint: '/bili', params: [] },
+                    { title: '微博热搜', endpoint: '/weibo', params: [] },
+                    { title: '百度实时热搜', endpoint: '/baidu/realtime', params: [] },
+                    { title: '百度电视剧榜', endpoint: '/baidu/teleplay', params: [] },
+                    { title: '百度贴吧话题榜', endpoint: '/baidu/tieba', params: [] },
+                    { title: '头条热搜榜', endpoint: '/toutiao', params: [] },
+                    { title: '知乎话题榜', endpoint: '/zhihu', params: [] },
+                    { title: '懂车帝热搜', endpoint: '/dongchedi', params: [] },
+                    { title: '网易云榜单列表', endpoint: '/ncm-rank', params: [] },
+                    { title: '网易云榜单详情', endpoint: '/ncm-rank/detail', params: [{name: 'id', example: '19723756'}] },
+                    { title: '猫眼票房榜', endpoint: '/maoyan', params: [] },
+                    { title: 'HackerNews 热门帖子', endpoint: '/hacker-news/top', params: [] }
+                ]
+            },
+            {
+                name: '实用功能',
+                apis: [
+                    { title: 'Epic Games 免费游戏', endpoint: '/epic', params: [] },
+                    { title: '公网 IP 地址', endpoint: '/ip', params: [] },
+                    { title: '农历信息（开发中）', endpoint: '/lunar', params: [] },
+                    { title: '实时天气', endpoint: '/weather', params: [{name: 'location', example: '北京'}] },
+                    { title: '天气预报', endpoint: '/weather/forecast', params: [{name: 'location', example: '北京'}] },
+                    { title: '生成二维码', endpoint: '/qrcode', params: [{name: 'text', example: 'https://example.com'}] },
+                    { title: '百度百科词条', endpoint: '/baike', params: [{name: 'word', example: '人工智能'}] },
+                    { title: '在线翻译', endpoint: '/fanyi', params: [{name: 'text', example: 'Hello'}, {name: 'from', example: 'en'}, {name: 'to', example: 'zh'}] },
+                    { title: '在线翻译支持语言', endpoint: '/fanyi/langs', params: [] },
+                    { title: '链接 OG 信息', endpoint: '/og', params: [{name: 'url', example: 'https://example.com'}] },
+                    { title: '哈希/解压/压缩', endpoint: '/hash', params: [{name: 'type', example: 'md5'}, {name: 'text', example: 'hello'}] },
+                    { title: '身体健康分析', endpoint: '/health', params: [{name: 'height', example: '170'}, {name: 'weight', example: '60'}, {name: 'age', example: '25'}, {name: 'gender', example: 'male'}] },
+                    { title: '密码生成器', endpoint: '/password', params: [{name: 'length', example: '12'}] },
+                    { title: '密码强度检测', endpoint: '/password/check', params: [{name: 'password', example: 'abc123'}] },
+                    { title: '随机颜色/颜色转换', endpoint: '/color', params: [{name: 'format', example: 'hex'}] },
+                    { title: '配色方案', endpoint: '/color/palette', params: [{name: 'color', example: '#ff0000'}, {name: 'mode', example: 'analogic'}] }
+                ]
+            },
+            {
+                name: '消遣娱乐',
+                apis: [
+                    { title: '随机唱歌音频', endpoint: '/changya', params: [] },
+                    { title: '随机一言', endpoint: '/hitokoto', params: [] },
+                    { title: '随机运势', endpoint: '/luck', params: [] },
+                    { title: '随机 JS 趣味题', endpoint: '/awesome-js', params: [] },
+                    { title: '随机搞笑段子', endpoint: '/duanzi', params: [] },
+                    { title: '随机发病文学', endpoint: '/fabing', params: [] },
+                    { title: '随机答案之书', endpoint: '/answer', params: [] },
+                    { title: '随机 KFC 文案', endpoint: '/kfc', params: [] },
+                    { title: '随机冷笑话', endpoint: '/dad-joke', params: [] }
+                ]
+            }
+        ];
+
+        // 格式化 JSON 为卡片式 HTML
+        function formatJson(data) {
+            let html = '';
+            if (typeof data === 'object' && data !== null) {
+                if (Array.isArray(data)) {
+                    if (data.length === 0) {
+                        html += '<div class="json-item"><span class="json-key">Array</span><span class="json-value">[ ]</span></div>';
+                    } else {
+                        data.forEach((item, index) => {
+                            html += `<div class="json-item"><span class="json-key">${index}</span><span class="json-value">${formatValue(item)}</span></div>`;
+                        });
+                    }
+                } else {
+                    const entries = Object.entries(data);
+                    if (entries.length === 0) {
+                        html += '<div class="json-item"><span class="json-key">Object</span><span class="json-value">{ }</span></div>';
+                    } else {
+                        entries.forEach(([key, value]) => {
+                            html += `<div class="json-item"><span class="json-key">&quot;${key}&quot;</span><span class="json-value">${formatValue(value)}</span></div>`;
+                        });
+                    }
+                }
+            } else {
+                html += `<div class="json-item"><span class="json-key">Result</span><span class="json-value">${formatValue(data)}</span></div>`;
+            }
+            return html;
+        }
+
+        // 格式化单个值，支持高亮和链接
+        function formatValue(value) {
+            if (value === null) return '<span class="json-null">null</span>';
+            if (typeof value === 'boolean') return `<span class="json-boolean">${value}</span>`;
+            if (typeof value === 'number') return `<span class="json-number">${value}</span>`;
+            if (typeof value === 'string') {
+                const urlRegex = /^(https?:\/\/[^\s]+)$/;
+                if (urlRegex.test(value)) {
+                    return `<span class="json-link"><a href="${value}" target="_blank">${value}</a></span>`;
+                }
+                return `<span class="json-string">&quot;${value}&quot;</span>`;
+            }
+            if (typeof value === 'object' && value !== null) {
+                return `<span class="json-collapsible" onclick="this.classList.toggle('collapsed'); this.nextElementSibling.classList.toggle('collapsed');">${Array.isArray(value) ? '[' : '{'}</span><div class="json-collapsible-content">${formatJson(value)}</div>`;
+            }
+            return value.toString();
+        }
+
+        // 函数：构建左侧导航
+        function buildNavigation(data) {
+            const navContainer = document.getElementById('api-navigation');
+            navContainer.innerHTML = '';
+            data.forEach((category, catIndex) => {
+                const accordionItem = document.createElement('div');
+                accordionItem.className = 'accordion-item';
+                accordionItem.innerHTML = `
+                    <h2 class="accordion-header">
+                        <button class="accordion-button ${catIndex === 0 ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${catIndex}">
+                            ${category.name}
+                        </button>
+                    </h2>
+                    <div id="collapse${catIndex}" class="accordion-collapse collapse ${catIndex === 0 ? 'show' : ''}">
+                        <div class="accordion-body p-0">
+                            <ul class="list-group list-group-flush">
+                                ${category.apis.map((api, apiIndex) => `
+                                    <li class="list-group-item list-group-item-action" data-cat-index="${catIndex}" data-api-index="${apiIndex}">
+                                        ${api.title}
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                `;
+                navContainer.appendChild(accordionItem);
+            });
+
+            // 添加点击事件
+            document.querySelectorAll('.list-group-item-action').forEach(item => {
+                item.addEventListener('click', () => {
+                    document.querySelectorAll('.list-group-item-action').forEach(el => el.classList.remove('active'));
+                    item.classList.add('active');
+                    const catIndex = item.dataset.catIndex;
+                    const apiIndex = item.dataset.apiIndex;
+                    loadApiContent(data[catIndex].apis[apiIndex]);
+                });
+            });
+
+            // 默认选中第一个 API
+            const firstItem = document.querySelector('.list-group-item-action');
+            if (firstItem) {
+                console.log('默认选中第一个 API:', firstItem.textContent);
+                firstItem.click();
+            } else {
+                console.error('未找到任何 API 导航项');
+            }
+        }
+
+        // 函数：加载右侧内容
+        function loadApiContent(api) {
+            console.log('加载 API:', api.title);
+            const paramsContainer = document.getElementById('api-params');
+            const fetchBtn = document.getElementById('fetch-btn');
+            const jsonContainer = document.getElementById('json-container');
+            const apiTitle = document.getElementById('api-title');
+            paramsContainer.innerHTML = '';
+            fetchBtn.style.display = 'block';
+            jsonContainer.classList.remove('loaded');
+            jsonContainer.innerHTML = '加载中...';
+            apiTitle.textContent = api.title;
+
+            if (api.params.length > 0) {
+                api.params.forEach(param => {
+                    const inputGroup = document.createElement('div');
+                    inputGroup.className = 'input-group mb-2';
+                    inputGroup.innerHTML = `
+                        <span class="input-group-text">${param.name}</span>
+                        <input type="text" class="form-control api-param" data-param-name="${param.name}" value="${param.example || ''}" placeholder="输入${param.name}">
+                    `;
+                    paramsContainer.appendChild(inputGroup);
+                });
+            }
+            fetchBtn.onclick = () => {
+                console.log('手动点击获取数据:', api.title);
+                fetchApiData(api.endpoint, api.params.map(p => ({name: p.name, value: document.querySelector(`[data-param-name="${p.name}"]`)?.value || ''})));
+            };
+            fetchApiData(api.endpoint, api.params.map(p => ({name: p.name, value: p.example || ''})));
+        }
+
+        // 函数：请求 API 数据
+        async function fetchApiData(endpoint, params) {
+            const jsonContainer = document.getElementById('json-container');
+            let url = `${baseUrl}${endpoint}`;
+            if (params.length > 0) {
+                const queryString = params.map(p => `${p.name}=${encodeURIComponent(p.value)}`).join('&');
+                url += `?${queryString}`;
+            }
+            console.log('请求 URL:', url);
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                jsonContainer.innerHTML = formatJson(data);
+            } catch (error) {
+                jsonContainer.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
+                console.error('API 请求失败:', error);
+            } finally {
+                jsonContainer.classList.add('loaded');
+            }
+        }
+
+        // 启动导航构建
+        console.log('开始构建导航...');
+        buildNavigation(apiData);
+    </script>
+</body>
+</html>
