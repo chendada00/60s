@@ -175,6 +175,33 @@
             max-width: 400px;
             margin-bottom: 20px;
         }
+        .success-tip {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #10b981;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            z-index: 1050;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        .success-tip.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .api-info {
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-top: 10px;
+            padding: 8px;
+            background-color: #f9fafb;
+            border-radius: 4px;
+            border-left: 3px solid var(--primary-color);
+        }
         @keyframes spin {
             0% { transform: translate(-50%, -50%) rotate(0deg); }
             100% { transform: translate(-50%, -50%) rotate(360deg); }
@@ -197,6 +224,11 @@
             .domain-select {
                 max-width: 100%;
             }
+            .success-tip {
+                top: 10px;
+                right: 10px;
+                left: 10px;
+            }
         }
     </style>
 </head>
@@ -209,7 +241,8 @@
                 <div class="mb-3">
                     <label for="baseUrlSelect" class="form-label">选择 API 域名：</label>
                     <select id="baseUrlSelect" class="form-select domain-select">
-                        <option value="https://60s.viki.moe/v2" selected>主域名: https://60s.viki.moe</option>
+                        <option value="60s.2207117672.workers.dev" selected>个人部署</option>
+                        <option value="https://60s.viki.moe/v2" selected>官方主域名: https://60s.viki.moe</option>
                         <option value="https://60s.b23.run/v2">备用1: https://60s.b23.run</option>
                         <option value="https://60s-cf.viki.moe/v2">备用2: https://60s-cf.viki.moe</option>
                         <option value="https://60s.114128.xyz/v2">备用3: https://60s.114128.xyz</option>
@@ -226,16 +259,25 @@
                     <div id="api-params" class="mb-3"></div>
                     <button id="fetch-btn" class="btn btn-primary mb-3" style="display: none;">获取数据</button>
                     <div id="json-container"></div>
+                    <div id="api-info" class="api-info" style="display: none;">
+                        数据来自官方/权威源头，以确保稳定与实时。<br>
+                        开源地址: <a href="https://github.com/vikiboss/60s" target="_blank">https://github.com/vikiboss/60s</a><br>
+                        反馈群: 595941841
+                    </div>
                 </div>
             </div>
         </div>
+    </div>
+
+    <div id="success-tip" class="success-tip">
+        <i class="bi bi-check-circle-fill"></i> 调用成功
     </div>
 
     <script>
         let baseUrl = document.getElementById('baseUrlSelect').value;
         let currentApi = null;
         let lastResponses = {};
-        let accordionInstances = {}; // 存储Bootstrap手风琴实例
+        let accordionInstances = {};
 
         // 域名切换事件
         document.getElementById('baseUrlSelect').addEventListener('change', function() {
@@ -318,20 +360,48 @@
             return encodeURIComponent(api.title);
         }
 
+        // 显示成功提示
+        function showSuccessTip() {
+            const tip = document.getElementById('success-tip');
+            tip.classList.add('show');
+            setTimeout(() => {
+                tip.classList.remove('show');
+            }, 2000);
+        }
+
+        // 过滤API响应数据，只保留data字段
+        function filterApiResponse(data) {
+            if (data && typeof data === 'object') {
+                // 检查是否包含标准响应结构
+                if (data.hasOwnProperty('code') && data.hasOwnProperty('message') && data.hasOwnProperty('data')) {
+                    // 显示API信息
+                    document.getElementById('api-info').style.display = 'block';
+                    // 返回data字段内容
+                    return data.data;
+                }
+            }
+            // 如果不是标准结构，隐藏API信息并返回原始数据
+            document.getElementById('api-info').style.display = 'none';
+            return data;
+        }
+
         // 格式化 JSON 为卡片式 HTML
         function formatJson(data) {
+            // 首先过滤响应数据
+            const filteredData = filterApiResponse(data);
+            
             let html = '';
-            if (typeof data === 'object' && data !== null) {
-                if (Array.isArray(data)) {
-                    if (data.length === 0) {
+            if (typeof filteredData === 'object' && filteredData !== null) {
+                if (Array.isArray(filteredData)) {
+                    if (filteredData.length === 0) {
                         html += '<div class="json-item"><span class="json-key">Array</span><span class="json-value">[ ]</span></div>';
                     } else {
-                        data.forEach((item, index) => {
+                        filteredData.forEach((item, index) => {
                             html += `<div class="json-item"><span class="json-key">${index}</span><span class="json-value">${formatValue(item)}</span></div>`;
                         });
                     }
                 } else {
-                    const entries = Object.entries(data);
+                    const entries = Object.entries(filteredData);
                     if (entries.length === 0) {
                         html += '<div class="json-item"><span class="json-key">Object</span><span class="json-value">{ }</span></div>';
                     } else {
@@ -341,7 +411,7 @@
                     }
                 }
             } else {
-                html += `<div class="json-item"><span class="json-key">Result</span><span class="json-value">${formatValue(data)}</span></div>`;
+                html += `<div class="json-item"><span class="json-key">Result</span><span class="json-value">${formatValue(filteredData)}</span></div>`;
             }
             return html;
         }
@@ -529,6 +599,7 @@
                 console.log('显示缓存的API响应:', api.title);
                 jsonContainer.innerHTML = lastResponses[apiId];
                 jsonContainer.classList.add('loaded');
+                showSuccessTip();
             }
         }
 
@@ -572,6 +643,9 @@
                     const apiId = getApiId(api);
                     lastResponses[apiId] = formattedData;
                 }
+                
+                // 显示成功提示
+                showSuccessTip();
             } catch (error) {
                 jsonContainer.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
                 console.error('API 请求失败:', error);
