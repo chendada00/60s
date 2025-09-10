@@ -1,43 +1,4 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
@@ -117,12 +78,12 @@
         #json-container.loaded {
             opacity: 1;
         }
-.json-item {
-    display: block;  /* 改成块级布局 */
-    margin-bottom: 5px;
-    padding: 2px 5px;
-    border-bottom: 1px solid #eee;
-}
+        .json-item {
+            display: block;  /* 改成块级布局 */
+            margin-bottom: 5px;
+            padding: 2px 5px;
+            border-bottom: 1px solid #eee;
+        }
         .json-key {
             color: var(--key-color);
             font-weight: bold;
@@ -158,11 +119,11 @@
         .json-collapsible.collapsed::before {
             content: '▶';
         }
-.json-collapsible-content {
-    display: block;
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-}
+        .json-collapsible-content {
+            display: block;
+            margin-left: 0 !important;
+            padding-left: 0 !important;
+        }
         .json-collapsible-content.collapsed {
             display: none;
         }
@@ -272,15 +233,16 @@
 
     <script>
         let baseUrl = document.getElementById('baseUrlSelect').value;
+        let currentApi = null; // 存储当前选中的API信息
+        let lastResponses = {}; // 存储各API的最后响应结果
 
         // 域名切换事件
         document.getElementById('baseUrlSelect').addEventListener('change', function() {
             baseUrl = this.value;
             console.log('API 域名切换到:', baseUrl);
             // 重新加载当前选中的 API
-            const activeItem = document.querySelector('.list-group-item-action.active');
-            if (activeItem) {
-                activeItem.click();
+            if (currentApi) {
+                loadApiContent(currentApi, true);
             }
         });
 
@@ -350,6 +312,11 @@
                 ]
             }
         ];
+
+        // 生成API的唯一标识符
+        function getApiId(api) {
+            return encodeURIComponent(api.title);
+        }
 
         // 格式化 JSON 为卡片式 HTML
         function formatJson(data) {
@@ -433,7 +400,7 @@
                         <div class="accordion-body p-0">
                             <ul class="list-group list-group-flush">
                                 ${category.apis.map((api, apiIndex) => `
-                                    <li class="list-group-item list-group-item-action" data-cat-index="${catIndex}" data-api-index="${apiIndex}">
+                                    <li class="list-group-item list-group-item-action" data-cat-index="${catIndex}" data-api-index="${apiIndex}" data-api-id="${getApiId(api)}">
                                         ${api.title}
                                     </li>
                                 `).join('')}
@@ -451,31 +418,56 @@
                     item.classList.add('active');
                     const catIndex = item.dataset.catIndex;
                     const apiIndex = item.dataset.apiIndex;
-                    loadApiContent(data[catIndex].apis[apiIndex]);
+                    const api = data[catIndex].apis[apiIndex];
+                    
+                    // 更新URL hash
+                    window.location.hash = getApiId(api);
+                    
+                    loadApiContent(api, false);
                 });
             });
 
-            // 默认选中第一个 API
-            const firstItem = document.querySelector('.list-group-item-action');
-            if (firstItem) {
-                console.log('默认选中第一个 API:', firstItem.textContent);
-                firstItem.click();
+            // 检查URL hash并选择对应的API
+            const hash = window.location.hash.substring(1);
+            if (hash) {
+                const targetItem = document.querySelector(`[data-api-id="${hash}"]`);
+                if (targetItem) {
+                    console.log('从URL hash加载API:', targetItem.textContent);
+                    targetItem.click();
+                } else {
+                    // 默认选中第一个 API
+                    const firstItem = document.querySelector('.list-group-item-action');
+                    if (firstItem) {
+                        console.log('默认选中第一个 API:', firstItem.textContent);
+                        firstItem.click();
+                    } else {
+                        console.error('未找到任何 API 导航项');
+                    }
+                }
             } else {
-                console.error('未找到任何 API 导航项');
+                // 默认选中第一个 API
+                const firstItem = document.querySelector('.list-group-item-action');
+                if (firstItem) {
+                    console.log('默认选中第一个 API:', firstItem.textContent);
+                    firstItem.click();
+                } else {
+                    console.error('未找到任何 API 导航项');
+                }
             }
         }
 
         // 函数：加载右侧内容
-        function loadApiContent(api) {
-            console.log('加载 API:', api.title);
+        function loadApiContent(api, forceFetch = false) {
+            console.log('加载 API:', api.title, forceFetch ? '(强制获取)' : '(可能使用缓存)');
+            currentApi = api;
+            
             const paramsContainer = document.getElementById('api-params');
             const fetchBtn = document.getElementById('fetch-btn');
             const jsonContainer = document.getElementById('json-container');
             const apiTitle = document.getElementById('api-title');
+            
             paramsContainer.innerHTML = '';
             fetchBtn.style.display = 'block';
-            jsonContainer.classList.remove('loaded');
-            jsonContainer.innerHTML = '加载中...';
             apiTitle.textContent = api.title;
 
             if (api.params.length > 0) {
@@ -489,29 +481,63 @@
                     paramsContainer.appendChild(inputGroup);
                 });
             }
+            
             fetchBtn.onclick = () => {
                 console.log('手动点击获取数据:', api.title);
-                fetchApiData(api.endpoint, api.params.map(p => ({name: p.name, value: document.querySelector(`[data-param-name="${p.name}"]`)?.value || ''})));
+                fetchApiData(api, true);
             };
-            fetchApiData(api.endpoint, api.params.map(p => ({name: p.name, value: p.example || ''})));
+            
+            // 检查是否有缓存数据，如果没有或强制获取则请求API
+            const apiId = getApiId(api);
+            if (forceFetch || !lastResponses[apiId]) {
+                fetchApiData(api, true);
+            } else {
+                console.log('显示缓存的API响应:', api.title);
+                jsonContainer.innerHTML = lastResponses[apiId];
+                jsonContainer.classList.add('loaded');
+            }
         }
 
         // 函数：请求 API 数据
-        async function fetchApiData(endpoint, params) {
+        async function fetchApiData(api, updateCache = true) {
             const jsonContainer = document.getElementById('json-container');
             const fetchBtn = document.getElementById('fetch-btn');
+            
+            jsonContainer.classList.remove('loaded');
             jsonContainer.classList.add('loading');
             fetchBtn.disabled = true; // 禁用按钮
-            let url = `${baseUrl}${endpoint}`;
-            if (params.length > 0) {
-                const queryString = params.map(p => `${p.name}=${encodeURIComponent(p.value)}`).join('&');
-                url += `?${queryString}`;
+            
+            let url = `${baseUrl}${api.endpoint}`;
+            const params = [];
+            
+            // 收集参数值
+            if (api.params.length > 0) {
+                api.params.forEach(param => {
+                    const input = document.querySelector(`[data-param-name="${param.name}"]`);
+                    if (input && input.value) {
+                        params.push({name: param.name, value: input.value});
+                    }
+                });
+                
+                if (params.length > 0) {
+                    const queryString = params.map(p => `${p.name}=${encodeURIComponent(p.value)}`).join('&');
+                    url += `${api.endpoint.includes('?') ? '&' : '?'}${queryString}`;
+                }
             }
+            
             console.log('请求 URL:', url);
             try {
                 const response = await fetch(url);
                 const data = await response.json();
-                jsonContainer.innerHTML = formatJson(data);
+                const formattedData = formatJson(data);
+                
+                jsonContainer.innerHTML = formattedData;
+                
+                // 更新缓存
+                if (updateCache) {
+                    const apiId = getApiId(api);
+                    lastResponses[apiId] = formattedData;
+                }
             } catch (error) {
                 jsonContainer.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
                 console.error('API 请求失败:', error);
